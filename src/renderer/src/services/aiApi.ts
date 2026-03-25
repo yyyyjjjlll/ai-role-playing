@@ -1,4 +1,4 @@
-import { AIResponse, AIProvider, AIProviderConfig } from '../../main/services/AIService'
+import { AIResponse, AIProvider, AIProviderConfig } from '@/../../main/services/AIService'
 
 /**
  * Type-safe IPC service for AI operations

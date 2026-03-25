@@ -83,7 +83,12 @@ export interface AppState {
     userIdentity: UserIdentity | null
   } | null>
   createRoomAsync: (name: string, worldSetting?: string) => Promise<Room | null>
+  updateRoomAsync: (roomId: string, updates: Partial<Room>) => Promise<Room | null>
+  deleteRoomAsync: (roomId: string) => Promise<boolean>
   createCharacterAsync: (roomId: string, name: string, description: string, portraitUrl?: string) => Promise<Character | null>
+  updateCharacterAsync: (characterId: string, updates: Partial<Character>) => Promise<Character | null>
+  deleteCharacterAsync: (characterId: string) => Promise<boolean>
   sendMessageAsync: (roomId: string, content: string, type: MessageType, characterId?: string) => Promise<Message | null>
+  sendUserMessageWithAIResponse: (roomId: string, content: string) => Promise<{ userMessage: Message; aiMessages: Message[] } | null>
   saveUserIdentityAsync: (roomId: string, type: 'actor' | 'observer', characterId?: string) => Promise<UserIdentity | null>
 }

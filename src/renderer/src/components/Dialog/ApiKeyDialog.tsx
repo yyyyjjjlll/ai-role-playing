@@ -17,8 +17,9 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Key, Globe, Server, Cpu } from 'lucide-react'
-import { AIProvider, AIProviderConfig } from '@/../main/services/AIService'
+import { AIProvider, AIProviderConfig } from '@/../../main/services/AIService'
 import { aiApi } from '@/services/aiApi'
+import { useToast } from '@/hooks/use-toast'
 
 interface ApiKeyDialogProps {
   open: boolean
@@ -38,6 +39,7 @@ export function ApiKeyDialog({
   const [model, setModel] = useState('')
   const [isSaving, setIsSaving] = useState(false)
   const [isCustomProvider, setIsCustomProvider] = useState(false)
+  const { toast } = useToast()
 
   // Load providers on mount
   useEffect(() => {
@@ -86,10 +88,20 @@ export function ApiKeyDialog({
         await onSetApiKey(apiKey.trim())
       }
 
+      toast({
+        title: '设置已保存',
+        description: 'AI 服务提供商配置已成功更新',
+        variant: 'success',
+      })
+
       setApiKey('')
       onOpenChange(false)
     } catch (error) {
-      console.error('Failed to save AI config:', error)
+      toast({
+        title: '保存失败',
+        description: '无法保存配置，请重试',
+        variant: 'destructive',
+      })
     } finally {
       setIsSaving(false)
     }

@@ -1,5 +1,5 @@
 import OpenAI from 'openai'
-import { Character, Message } from '../../types'
+import { Character, Message } from '../types'
 
 export interface AIResponse {
   characterDialogues: Array<{
@@ -222,25 +222,43 @@ export class AIService {
 
     // System prompt with world setting and character descriptions
     let systemContent = `你是一个角色扮演游戏的 AI 叙事引擎。
+
 世界设定：${worldSetting || '未设定'}
 
 当前角色：
 ${characters.map(c => `- ${c.name}: ${c.description}`).join('\n')}
 
-请根据以上设定生成符合情境的对话和旁白。
-格式要求：
+`
+
+    // Add user role instruction - CRITICAL for proper behavior
+    if (userIdentity?.type === 'actor' && userCharacter) {
+      systemContent += `重要：用户身份 - 演绎者模式
+用户正在扮演角色：【${userCharacter.name}】
+你的职责：
+1. 绝对不要为角色"${userCharacter.name}"生成任何对话或行为
+2. 只为其他角色（${characters.filter(c => c.id !== userCharacter.id).map(c => c.name).join('、')}）生成回应
+3. 对用户扮演角色的发言做出自然反应
+4. 推动剧情发展，但不要代替用户角色做决定
+
+`
+    } else if (userIdentity?.type === 'observer') {
+      systemContent += `重要：用户身份 - 旁观者模式
+用户是旁观者，正在引导和观察故事发展
+你的职责：
+1. 为所有角色生成自然的对话和行为
+2. 根据用户的引导推动剧情
+3. 让角色之间产生互动和冲突
+4. 创造引人入胜的叙事体验
+
+`
+    }
+
+    systemContent += `格式要求：
 - 角色对话使用格式：[角色名]: 对话内容
 - 旁白使用格式：【旁白】旁白内容
 - 可以有多个角色对话和旁白交替
-- 保持回应简洁，每段对话不超过 100 字`
-
-    // Add user role instruction
-    if (userIdentity?.type === 'actor' && userCharacter) {
-      systemContent += `\n\n用户正在扮演角色：${userCharacter.name}
-请为其他角色生成回应，不要为用户扮演的角色生成对话。`
-    } else if (userIdentity?.type === 'observer') {
-      systemContent += '\n\n用户是旁观者，正在引导故事发展。请为所有角色生成回应。'
-    }
+- 保持回应简洁，每段对话不超过 100 字
+- 对话要符合角色性格和当前情境`
 
     messages.push({
       role: 'system',
@@ -250,9 +268,11 @@ ${characters.map(c => `- ${c.name}: ${c.description}`).join('\n')}
     // Add recent conversation history
     const historyMessages = recentMessages.slice(-50).map((msg): OpenAI.Chat.Completions.ChatCompletionMessageParam => {
       if (msg.type === 'user') {
+        const character = characters.find(c => c.id === msg.characterId)
+        const prefix = character ? `[${character.name}]` : '[用户]'
         return {
           role: 'user',
-          content: `[用户]: ${msg.content}`
+          content: `${prefix}: ${msg.content}`
         }
       } else if (msg.type === 'narrator') {
         return {

@@ -14,7 +14,8 @@
       "Bash(npx electron-rebuild:*)",
       "Bash(npm run typecheck:node:*)",
       "Bash(npm run typecheck)",
-      "Bash(npm ls:*)"
+      "Bash(npm ls:*)",
+      "Bash(npx shadcn@latest add:*)"
     ]
   }
 }

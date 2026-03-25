@@ -165,6 +165,39 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
+  updateRoomAsync: async (roomId: string, updates: Partial<Room>) => {
+    try {
+      const savedRoom = await storageApi.updateRoom(roomId, updates)
+      if (savedRoom) {
+        set((state) => ({
+          rooms: state.rooms.map((room) =>
+            room.id === roomId ? { ...room, ...savedRoom } : room
+          )
+        }))
+      }
+      return savedRoom
+    } catch (error) {
+      console.error('Failed to update room:', error)
+      return null
+    }
+  },
+
+  deleteRoomAsync: async (roomId: string) => {
+    try {
+      const success = await storageApi.deleteRoom(roomId)
+      if (success) {
+        set((state) => ({
+          rooms: state.rooms.filter((room) => room.id !== roomId),
+          currentRoomId: state.currentRoomId === roomId ? null : state.currentRoomId
+        }))
+      }
+      return success
+    } catch (error) {
+      console.error('Failed to delete room:', error)
+      return false
+    }
+  },
+
   createCharacterAsync: async (roomId: string, name: string, description: string, portraitUrl?: string) => {
     try {
       const character: Character = {
@@ -184,6 +217,38 @@ export const useAppStore = create<AppState>((set, get) => ({
     } catch (error) {
       console.error('Failed to create character:', error)
       return null
+    }
+  },
+
+  updateCharacterAsync: async (characterId: string, updates: Partial<Character>) => {
+    try {
+      const savedCharacter = await storageApi.updateCharacter(characterId, updates)
+      if (savedCharacter) {
+        set((state) => ({
+          characters: state.characters.map((char) =>
+            char.id === characterId ? { ...char, ...savedCharacter } : char
+          )
+        }))
+      }
+      return savedCharacter
+    } catch (error) {
+      console.error('Failed to update character:', error)
+      return null
+    }
+  },
+
+  deleteCharacterAsync: async (characterId: string) => {
+    try {
+      const success = await storageApi.deleteCharacter(characterId)
+      if (success) {
+        set((state) => ({
+          characters: state.characters.filter((char) => char.id !== characterId)
+        }))
+      }
+      return success
+    } catch (error) {
+      console.error('Failed to delete character:', error)
+      return false
     }
   },
 
@@ -212,15 +277,19 @@ export const useAppStore = create<AppState>((set, get) => ({
   /**
    * Send user message and trigger AI response
    */
-  sendUserMessageWithAIResponse: async (roomId: string, content: string, characterId?: string) => {
+  sendUserMessageWithAIResponse: async (roomId: string, content: string) => {
     try {
       set({ isLoading: true })
+
+      // Get user identity to determine which character is speaking
+      const userIdentity = get().userIdentities.get(roomId)
+      const actualCharacterId = userIdentity?.type === 'actor' ? userIdentity.characterId : undefined
 
       // Save user message
       const userMessage: Message = {
         id: generateId(),
         roomId,
-        characterId,
+        characterId: actualCharacterId, // Use the user's assigned character in actor mode
         type: 'user',
         content,
         timestamp: Date.now()
@@ -231,10 +300,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         messages: [...state.messages, savedUserMessage]
       }))
 
-      // Get user identity
-      const userIdentity = get().userIdentities.get(roomId)
-
-      // Generate AI response
+      // Generate AI response with user identity
       const aiResult = await aiApi.generateResponse(roomId, userIdentity)
 
       if (!aiResult.success || !aiResult.response) {

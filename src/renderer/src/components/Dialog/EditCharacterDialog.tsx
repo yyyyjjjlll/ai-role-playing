@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import {
   Dialog,
   DialogContent,
@@ -10,45 +10,49 @@ import {
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Upload, X } from 'lucide-react'
-import { useToast } from '@/hooks/use-toast'
+import { Character } from '@/types'
 
-interface NewCharacterDialogProps {
+interface EditCharacterDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
-  onCreate: (name: string, description: string, portraitUrl?: string) => Promise<void>
+  character: Character | null
+  onSave: (characterId: string, updates: Partial<Character>) => Promise<void>
+  isSaving?: boolean
 }
 
-export function NewCharacterDialog({
+export function EditCharacterDialog({
   open,
   onOpenChange,
-  onCreate,
-}: NewCharacterDialogProps): React.JSX.Element {
+  character,
+  onSave,
+  isSaving: parentIsSaving,
+}: EditCharacterDialogProps): React.JSX.Element {
   const [characterName, setCharacterName] = useState('')
   const [description, setDescription] = useState('')
   const [portraitUrl, setPortraitUrl] = useState<string | undefined>()
-  const [isCreating, setIsCreating] = useState(false)
+  const [isSaving, setIsSaving] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
-  const { toast } = useToast()
+
+  const effectiveIsSaving = parentIsSaving !== undefined ? parentIsSaving : isSaving
+
+  // Reset form when character changes
+  useEffect(() => {
+    if (character) {
+      setCharacterName(character.name)
+      setDescription(character.description)
+      setPortraitUrl(character.portraitUrl)
+    }
+  }, [character])
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (file) {
-      // Validate file type
       if (!file.type.startsWith('image/')) {
-        toast({
-          title: '无效文件',
-          description: '请选择图像文件（PNG, JPG, WebP）',
-          variant: 'destructive',
-        })
+        alert('请选择图像文件')
         return
       }
-      // Validate file size (10MB limit)
       if (file.size > 10 * 1024 * 1024) {
-        toast({
-          title: '文件过大',
-          description: '文件大小不能超过 10MB',
-          variant: 'destructive',
-        })
+        alert('文件大小不能超过 10MB')
         return
       }
       setPortraitUrl(URL.createObjectURL(file))
@@ -62,26 +66,25 @@ export function NewCharacterDialog({
     }
   }
 
-  const handleCreate = async () => {
-    if (!characterName.trim()) return
+  const handleSave = async () => {
+    if (!character || !characterName.trim()) return
 
-    setIsCreating(true)
+    if (parentIsSaving === undefined) {
+      setIsSaving(true)
+    }
     try {
-      let finalPortraitUrl = portraitUrl
-
-      // If there's a file, it will be handled by the parent component
-      // through a custom event or callback
-      await onCreate(characterName.trim(), description.trim(), finalPortraitUrl)
-
-      // Reset form
-      setCharacterName('')
-      setDescription('')
-      handleClearImage()
+      await onSave(character.id, {
+        name: characterName.trim(),
+        description: description.trim(),
+        portraitUrl,
+      })
       onOpenChange(false)
     } catch (error) {
-      console.error('Failed to create character:', error)
+      console.error('Failed to update character:', error)
     } finally {
-      setIsCreating(false)
+      if (parentIsSaving === undefined) {
+        setIsSaving(false)
+      }
     }
   }
 
@@ -89,9 +92,9 @@ export function NewCharacterDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[425px]">
         <DialogHeader>
-          <DialogTitle>添加新角色</DialogTitle>
+          <DialogTitle>编辑角色</DialogTitle>
           <DialogDescription>
-            创建一个新的角色加入聊天室
+            修改角色的信息和设定
           </DialogDescription>
         </DialogHeader>
 
@@ -110,6 +113,7 @@ export function NewCharacterDialog({
                     onClick={handleClearImage}
                     className="absolute -top-1 -right-1 p-1 bg-destructive text-destructive-foreground rounded-full hover:opacity-90"
                     type="button"
+                    disabled={effectiveIsSaving}
                   >
                     <X className="h-3 w-3" />
                   </button>
@@ -128,7 +132,7 @@ export function NewCharacterDialog({
                 accept="image/*"
                 onChange={handleFileSelect}
                 className="hidden"
-                disabled={isCreating}
+                disabled={effectiveIsSaving}
               />
             </div>
             <p className="text-xs text-muted-foreground">
@@ -138,30 +142,30 @@ export function NewCharacterDialog({
 
           {/* Character Name */}
           <div className="grid gap-2">
-            <label htmlFor="character-name" className="text-sm font-medium">
+            <label htmlFor="edit-character-name" className="text-sm font-medium">
               角色名称 <span className="text-destructive">*</span>
             </label>
             <Input
-              id="character-name"
+              id="edit-character-name"
               placeholder="例如：艾伦"
               value={characterName}
               onChange={(e) => setCharacterName(e.target.value)}
-              disabled={isCreating}
+              disabled={effectiveIsSaving}
             />
           </div>
 
           {/* Description */}
           <div className="grid gap-2">
-            <label htmlFor="description" className="text-sm font-medium">
+            <label htmlFor="edit-description" className="text-sm font-medium">
               角色设定 <span className="text-destructive">*</span>
             </label>
             <textarea
-              id="description"
+              id="edit-description"
               className="flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
               placeholder="描述角色的性格、外貌、背景等..."
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              disabled={isCreating}
+              disabled={effectiveIsSaving}
             />
           </div>
         </div>
@@ -170,15 +174,15 @@ export function NewCharacterDialog({
           <Button
             variant="outline"
             onClick={() => onOpenChange(false)}
-            disabled={isCreating}
+            disabled={effectiveIsSaving}
           >
             取消
           </Button>
           <Button
-            onClick={handleCreate}
-            disabled={!characterName.trim() || isCreating}
+            onClick={handleSave}
+            disabled={!characterName.trim() || effectiveIsSaving}
           >
-            {isCreating ? '创建中...' : '创建'}
+            {effectiveIsSaving ? '保存中...' : '保存'}
           </Button>
         </DialogFooter>
       </DialogContent>
