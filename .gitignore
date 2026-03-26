@@ -7,3 +7,5 @@ out
 .env.local
 userData
 assets
+.claude
+.specstory
