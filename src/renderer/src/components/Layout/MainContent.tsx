@@ -97,18 +97,21 @@ export function MainContent(): React.JSX.Element {
       <div className="flex items-center justify-between border-b px-4 py-3 bg-background">
         <div className="min-w-0">
           <h1 className="text-lg font-semibold truncate">{currentRoom?.name}</h1>
-          {currentRoom?.worldSetting && (
+          {/* {currentRoom?.worldSetting && (
             <p className="text-xs text-muted-foreground truncate mt-0.5">
               {currentRoom.worldSetting}
             </p>
-          )}
+          )} */}
+          <p className="text-xs text-muted-foreground truncate mt-0.5">
+            {currentRoom?.worldSetting || '暂无设定'}
+          </p>
         </div>
       </div>
 
       {/* Room Content */}
       <div className="flex flex-1 overflow-hidden">
         {/* Left Panel: Characters & Identity */}
-        <div className="w-72 border-r bg-background flex flex-col">
+        <div className="w-64 border-r bg-background flex flex-col min-h-0">
           <CharacterList onAddCharacter={() => setIsCharacterDialogOpen(true)} />
 
           {/* Identity Selector */}

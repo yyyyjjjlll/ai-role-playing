@@ -1,17 +1,19 @@
 import React, { useEffect, useState } from 'react'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Button } from '@/components/ui/button'
-import { Plus, MoreVertical, Edit, Trash2, Home } from 'lucide-react'
+import { Plus, MoreVertical, Edit, Trash2, Home, Sparkles } from 'lucide-react'
 import { useAppStore } from '@/store/appStore'
 import { useToast } from '@/hooks/use-toast'
 import { EditRoomDialog } from '@/components/Dialog/EditRoomDialog'
 import { DeleteRoomDialog } from '@/components/Dialog/DeleteRoomDialog'
+import { CreateDemoRoomDialog } from '@/components/Dialog/CreateDemoRoomDialog'
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import { DemoTemplate } from '../../../../shared/demoTemplates'
 
 interface RoomSidebarProps {
   onCreateRoom: () => void
@@ -24,12 +26,16 @@ export function RoomSidebar({ onCreateRoom }: RoomSidebarProps): React.JSX.Eleme
   const loadRoom = useAppStore((state) => state.loadRoom)
   const updateRoomAsync = useAppStore((state) => state.updateRoomAsync)
   const deleteRoomAsync = useAppStore((state) => state.deleteRoomAsync)
+  const createRoomAsync = useAppStore((state) => state.createRoomAsync)
+  const createCharacterAsync = useAppStore((state) => state.createCharacterAsync)
   const { toast } = useToast()
 
   const [editingRoom, setEditingRoom] = useState<{ id: string; name: string } | null>(null)
   const [deletingRoom, setDeletingRoom] = useState<{ id: string; name: string } | null>(null)
   const [isDeleting, setIsDeleting] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
+  const [isDemoDialogOpen, setIsDemoDialogOpen] = useState(false)
+  const [isCreatingDemo, setIsCreatingDemo] = useState(false)
 
   // Load rooms on mount
   useEffect(() => {
@@ -83,14 +89,59 @@ export function RoomSidebar({ onCreateRoom }: RoomSidebarProps): React.JSX.Eleme
     }
   }
 
+  const handleCreateDemoRoom = async (template: DemoTemplate) => {
+    setIsCreatingDemo(true)
+    try {
+      // Create room
+      const room = await createRoomAsync(template.name, template.worldSetting)
+      if (!room) {
+        throw new Error('创建房间失败')
+      }
+
+      // Create characters
+      for (const charTemplate of template.characters) {
+        await createCharacterAsync(room.id, charTemplate.name, charTemplate.description)
+      }
+
+      // Load the new room
+      await loadRoom(room.id)
+
+      toast({
+        title: '创建成功',
+        description: `已创建"${template.name}"及 ${template.characters.length} 个角色`,
+        variant: 'success',
+      })
+      setIsDemoDialogOpen(false)
+    } catch (error) {
+      toast({
+        title: '创建失败',
+        description: '无法创建 Demo 房间',
+        variant: 'destructive',
+      })
+    } finally {
+      setIsCreatingDemo(false)
+    }
+  }
+
   return (
     <div className="flex h-full w-64 min-w-64 flex-col border-r bg-background">
       {/* Header */}
       <div className="flex items-center justify-between border-b px-4 py-3">
         <h2 className="text-base font-semibold text-foreground truncate">聊天室</h2>
-        <Button size="icon" variant="ghost" className="h-8 w-8 shrink-0" onClick={onCreateRoom}>
-          <Plus className="h-4 w-4" />
-        </Button>
+        <div className="flex items-center gap-1">
+          <Button
+            size="icon"
+            variant="ghost"
+            className="h-8 w-8 shrink-0"
+            onClick={() => setIsDemoDialogOpen(true)}
+            title="快速创建 Demo 房间"
+          >
+            <Sparkles className="h-4 w-4" />
+          </Button>
+          <Button size="icon" variant="ghost" className="h-8 w-8 shrink-0" onClick={onCreateRoom}>
+            <Plus className="h-4 w-4" />
+          </Button>
+        </div>
       </div>
 
       {/* Room List */}
@@ -117,7 +168,7 @@ export function RoomSidebar({ onCreateRoom }: RoomSidebarProps): React.JSX.Eleme
                 {/* Room Info */}
                 <div className="flex-1 min-w-0 flex flex-col justify-center">
                   <div className="font-medium text-sm truncate w-full">{room.name}</div>
-                  <div className="text-xs text-muted-foreground truncate w-full opacity-70">
+                  <div className="text-xs text-muted-foreground truncate w-40 opacity-70">
                     {room.worldSetting || '暂无设定'}
                   </div>
                 </div>
@@ -157,6 +208,7 @@ export function RoomSidebar({ onCreateRoom }: RoomSidebarProps): React.JSX.Eleme
               <p className="text-xs mt-1 opacity-70">点击上方 + 创建</p>
             </div>
           )}
+          <div className="h-[40px]"></div>
         </div>
       </ScrollArea>
 
@@ -175,6 +227,13 @@ export function RoomSidebar({ onCreateRoom }: RoomSidebarProps): React.JSX.Eleme
         roomName={deletingRoom?.name || ''}
         onDelete={handleDeleteRoom}
         isDeleting={isDeleting}
+      />
+
+      <CreateDemoRoomDialog
+        open={isDemoDialogOpen}
+        onOpenChange={setIsDemoDialogOpen}
+        onCreate={handleCreateDemoRoom}
+        isCreating={isCreatingDemo}
       />
     </div>
   )

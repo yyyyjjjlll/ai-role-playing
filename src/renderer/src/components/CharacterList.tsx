@@ -77,7 +77,7 @@ export function CharacterList({ onAddCharacter }: CharacterListProps): React.JSX
   }
 
   return (
-    <div className="flex flex-col h-full min-w-0">
+    <div className="flex flex-col flex-1 min-h-0 min-w-0">
       {/* Header */}
       <div className="flex items-center justify-between border-b px-4 py-3">
         <h2 className="text-base font-semibold text-foreground truncate">角色</h2>
@@ -115,7 +115,7 @@ export function CharacterList({ onAddCharacter }: CharacterListProps): React.JSX
                   <div className="font-medium text-sm truncate text-foreground w-full">
                     {character.name}
                   </div>
-                  <div className="text-xs text-muted-foreground truncate w-full">
+                  <div className="text-xs text-muted-foreground truncate w-40">
                     {character.description || '暂无描述'}
                   </div>
                 </div>
@@ -157,6 +157,23 @@ export function CharacterList({ onAddCharacter }: CharacterListProps): React.JSX
           )}
         </div>
       </ScrollArea>
+
+      {/* Dialogs */}
+      <EditCharacterDialog
+        open={!!editingCharacter}
+        onOpenChange={(open) => !open && setEditingCharacter(null)}
+        character={editingCharacter ? characters.find(c => c.id === editingCharacter.id) || null : null}
+        onSave={handleEditCharacter}
+        isSaving={isSaving}
+      />
+
+      <DeleteCharacterDialog
+        open={!!deletingCharacter}
+        onOpenChange={(open) => !open && setDeletingCharacter(null)}
+        characterName={deletingCharacter?.name || ''}
+        onDelete={handleDeleteCharacter}
+        isDeleting={isDeleting}
+      />
     </div>
   )
 }

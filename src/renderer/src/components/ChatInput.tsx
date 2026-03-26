@@ -48,7 +48,8 @@ export function ChatInput({
           placeholder={placeholder}
           disabled={disabled || isSending}
           rows={1}
-          className="flex-1 resize-none focus:min-h-[2.5rem]"
+          // className="flex-1 resize-none focus:min-h-[2.5rem]"
+          className="flex-1 resize-none"
         />
         <Button
           onClick={handleSend}

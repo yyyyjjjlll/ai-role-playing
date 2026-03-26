@@ -44,4 +44,5 @@ export const AIChannels = {
   SET_MODEL: 'ai:setModel',
   GET_CONFIG: 'ai:getConfig',
   CHECK_CONFIGURED: 'ai:checkConfigured',
+  SET_GENERATION_LENGTH: 'ai:setGenerationLength',
 } as const

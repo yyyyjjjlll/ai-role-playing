@@ -2,7 +2,10 @@ import React, { useEffect, useRef } from 'react'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { useAppStore } from '@/store/appStore'
 import { ChatInput } from './ChatInput'
-import { Loader2 } from 'lucide-react'
+import { Loader2, ArrowRight } from 'lucide-react'
+import { GenerationLengthSelector } from './GenerationLengthSelector'
+import { AIGenerationLength } from '../../shared/aiTypes'
+import { Button } from '@/components/ui/button'
 
 export function MessageList(): React.JSX.Element {
   const messages = useAppStore((state) => state.messages)
@@ -14,6 +17,9 @@ export function MessageList(): React.JSX.Element {
   const scrollRef = useRef<HTMLDivElement>(null)
 
   const userIdentity = currentRoomId ? getUserIdentity(currentRoomId) : undefined
+
+  // Store current selected length
+  const currentLengthRef = React.useRef<AIGenerationLength>('medium')
 
   const getCharacterName = (characterId?: string) => {
     if (!characterId) return '旁白'
@@ -36,19 +42,72 @@ export function MessageList(): React.JSX.Element {
 
   const handleSendMessage = async (content: string) => {
     if (!currentRoomId) return
-    await sendUserMessageWithAIResponse(currentRoomId, content)
+    await sendUserMessageWithAIResponse(currentRoomId, content, currentLengthRef.current)
+  }
+
+  const handleContinue = async () => {
+    if (!currentRoomId) return
+    // 发送一个特殊的提示，让 AI 继续剧情
+    await sendUserMessageWithAIResponse(currentRoomId, '（继续）', currentLengthRef.current)
+  }
+
+  const handleLengthChange = (length: AIGenerationLength) => {
+    currentLengthRef.current = length
   }
 
   const formatTime = (timestamp: number) => {
-    const date = new Date(timestamp)
-    return date.toLocaleTimeString('zh-CN', {
-      hour: '2-digit',
-      minute: '2-digit'
-    })
+    // 兼容后端可能传的是秒时间戳：例如 1710000000
+    const ts = timestamp < 1_000_000_000_000 ? timestamp * 1000 : timestamp
+
+    const date = new Date(ts)
+    const now = new Date()
+
+    const pad2 = (n: number) => String(n).padStart(2, '0')
+    const timeStr = `${pad2(date.getHours())}:${pad2(date.getMinutes())}`
+
+    const diffMs = now.getTime() - date.getTime()
+    if (diffMs < 0) return timeStr
+
+    // 1分钟内：社交平台常用“刚刚”
+    if (diffMs < 60 * 1000) return '刚刚'
+    // 1小时内：xx分钟前
+    if (diffMs < 60 * 60 * 1000) return `${Math.floor(diffMs / (60 * 1000))}分钟前`
+    // 1天内：xx小时前
+    if (diffMs < 24 * 60 * 60 * 1000) return `${Math.floor(diffMs / (60 * 60 * 1000))}小时前`
+
+    // 跨天逻辑：今天/昨天/本周/更早
+    const startOfToday = new Date(now)
+    startOfToday.setHours(0, 0, 0, 0)
+
+    const startOfThatDay = new Date(date)
+    startOfThatDay.setHours(0, 0, 0, 0)
+
+    const dayDiff = Math.round((startOfToday.getTime() - startOfThatDay.getTime()) / (24 * 60 * 60 * 1000))
+
+    if (dayDiff === 1) return `昨天 ${timeStr}`
+
+    const weekday = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
+    if (dayDiff > 1 && dayDiff < 7 && date.getFullYear() === now.getFullYear()) {
+      return `${weekday[date.getDay()]} ${timeStr}`
+    }
+
+    // 更早：显示日期（尽量简洁但包含时间）
+    const month = date.getMonth() + 1
+    const day = date.getDate()
+    const year = date.getFullYear()
+
+    if (year === now.getFullYear()) return `${month}月${day}日 ${timeStr}`
+    return `${year}年${month}月${day}日 ${timeStr}`
   }
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
+      {/* Header with length selector */}
+      <div className="flex items-center justify-between border-b px-4 py-2 bg-background">
+        <span className="text-xs font-medium text-muted-foreground">剧情生成</span>
+        <GenerationLengthSelector onChange={handleLengthChange} />
+      </div>
+
       <ScrollArea className="flex-1">
         <div className="p-4 space-y-4">
           {messages.length > 0 ? (
@@ -183,6 +242,21 @@ export function MessageList(): React.JSX.Element {
           <div ref={scrollRef} />
         </div>
       </ScrollArea>
+
+      {/* Continue Button - Show when there are messages and not loading */}
+      {messages.length > 0 && !isLoading && (
+        <div className="border-t px-4 py-3 bg-background/95 backdrop-blur">
+          <Button
+            variant="outline"
+            className="w-full"
+            onClick={handleContinue}
+            disabled={!currentRoomId}
+          >
+            <ArrowRight className="h-4 w-4 mr-2" />
+            继续剧情
+          </Button>
+        </div>
+      )}
 
       {/* Chat Input */}
       <ChatInput

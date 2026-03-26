@@ -268,6 +268,42 @@ export class StorageService {
     return result.changes > 0
   }
 
+  // ==================== AI Config Operations ====================
+
+  /**
+   * Get AI config value by key
+   */
+  getAiConfig(key: string): string | null {
+    const stmt = this.db.prepare('SELECT value FROM ai_config WHERE key = ?')
+    const row = stmt.get(key) as { value: string } | undefined
+    return row ? row.value : null
+  }
+
+  /**
+   * Set AI config value (upsert)
+   */
+  setAiConfig(key: string, value: string): void {
+    const stmt = this.db.prepare(`
+      INSERT INTO ai_config (key, value)
+      VALUES (?, ?)
+      ON CONFLICT(key) DO UPDATE SET value = excluded.value
+    `)
+    stmt.run(key, value)
+  }
+
+  /**
+   * Get all AI config
+   */
+  getAllAiConfig(): Record<string, string> {
+    const stmt = this.db.prepare('SELECT key, value FROM ai_config')
+    const rows = stmt.all() as Array<{ key: string; value: string }>
+    const config: Record<string, string> = {}
+    for (const row of rows) {
+      config[row.key] = row.value
+    }
+    return config
+  }
+
   // ==================== Helper Methods ====================
 
   private rowToRoom(row: RoomRow): Room {

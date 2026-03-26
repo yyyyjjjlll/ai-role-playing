@@ -277,7 +277,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   /**
    * Send user message and trigger AI response
    */
-  sendUserMessageWithAIResponse: async (roomId: string, content: string) => {
+  sendUserMessageWithAIResponse: async (roomId: string, content: string, length?: import('@/../../main/services/AIService').AIGenerationLength) => {
     try {
       set({ isLoading: true })
 
@@ -301,7 +301,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       }))
 
       // Generate AI response with user identity
-      const aiResult = await aiApi.generateResponse(roomId, userIdentity)
+      const aiResult = await aiApi.generateResponse(roomId, userIdentity, length)
 
       if (!aiResult.success || !aiResult.response) {
         console.error('AI generation failed:', aiResult.error)

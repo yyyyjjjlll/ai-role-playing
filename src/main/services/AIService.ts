@@ -1,5 +1,7 @@
 import OpenAI from 'openai'
 import { Character, Message } from '../types'
+import { storageService } from './StorageService'
+import { AIGenerationLength, AI_LENGTH_CONFIG } from '../../shared/aiTypes'
 
 export interface AIResponse {
   characterDialogues: Array<{
@@ -119,6 +121,7 @@ export interface AIServiceConfig {
   apiKey?: string
   model?: string
   baseUrl?: string
+  generationLength?: AIGenerationLength
 }
 
 export class AIService {
@@ -130,12 +133,78 @@ export class AIService {
     this.config = {
       provider: 'openai',
       model: 'gpt-3.5-turbo',
+      generationLength: 'medium', // 默认中等长度
       ...config
     }
     this.provider = this.config.provider || 'openai'
 
     if (config.apiKey) {
       this.initClient()
+    }
+  }
+
+  /**
+   * Load config from storage and initialize
+   */
+  async loadFromStorage(): Promise<void> {
+    try {
+      const aiConfig = storageService.getAllAiConfig()
+      const provider = aiConfig['provider'] as AIProvider | undefined
+      const apiKey = aiConfig['apiKey']
+      const baseUrl = aiConfig['baseUrl']
+      const model = aiConfig['model']
+      const generationLength = aiConfig['generationLength'] as AIGenerationLength | undefined
+
+      if (provider) {
+        this.provider = provider
+      }
+      if (apiKey) {
+        this.config.apiKey = apiKey
+      }
+      if (baseUrl) {
+        this.config.baseUrl = baseUrl
+      }
+      if (model) {
+        this.config.model = model
+      } else {
+        // Use default model for the provider
+        const providerConfig = AI_PROVIDERS[this.provider]
+        if (providerConfig) {
+          this.config.model = providerConfig.defaultModel
+        }
+      }
+      if (generationLength) {
+        this.config.generationLength = generationLength
+      }
+
+      if (this.config.apiKey || AI_PROVIDERS[this.provider]?.apiKeyRequired === false) {
+        this.initClient()
+      }
+    } catch (error) {
+      console.error('[AIService] Failed to load config from storage:', error)
+    }
+  }
+
+  /**
+   * Save config to storage
+   */
+  private saveToStorage(): void {
+    try {
+      storageService.setAiConfig('provider', this.provider)
+      if (this.config.apiKey) {
+        storageService.setAiConfig('apiKey', this.config.apiKey)
+      }
+      if (this.config.baseUrl) {
+        storageService.setAiConfig('baseUrl', this.config.baseUrl)
+      }
+      if (this.config.model) {
+        storageService.setAiConfig('model', this.config.model)
+      }
+      if (this.config.generationLength) {
+        storageService.setAiConfig('generationLength', this.config.generationLength)
+      }
+    } catch (error) {
+      console.error('[AIService] Failed to save config to storage:', error)
     }
   }
 
@@ -159,6 +228,7 @@ export class AIService {
     const providerConfig = AI_PROVIDERS[provider]
     this.config.model = this.config.model || providerConfig.defaultModel
     this.initClient()
+    this.saveToStorage()
   }
 
   /**
@@ -167,6 +237,7 @@ export class AIService {
   setApiKey(apiKey: string): void {
     this.config.apiKey = apiKey
     this.initClient()
+    this.saveToStorage()
   }
 
   /**
@@ -175,6 +246,7 @@ export class AIService {
   setBaseUrl(baseUrl: string): void {
     this.config.baseUrl = baseUrl
     this.initClient()
+    this.saveToStorage()
   }
 
   /**
@@ -182,6 +254,15 @@ export class AIService {
    */
   setModel(model: string): void {
     this.config.model = model
+    this.saveToStorage()
+  }
+
+  /**
+   * Set the generation length
+   */
+  setGenerationLength(length: AIGenerationLength): void {
+    this.config.generationLength = length
+    this.saveToStorage()
   }
 
   /**
@@ -202,6 +283,13 @@ export class AIService {
   }
 
   /**
+   * Get current generation length
+   */
+  getGenerationLength(): AIGenerationLength {
+    return this.config.generationLength || 'medium'
+  }
+
+  /**
    * Check if the service is configured
    */
   isConfigured(): boolean {
@@ -216,9 +304,19 @@ export class AIService {
     characters: Character[],
     recentMessages: Message[],
     userIdentity?: { type: 'actor' | 'observer'; characterId?: string },
-    userCharacter?: Character
+    userCharacter?: Character,
+    length?: AIGenerationLength
   ): OpenAI.Chat.Completions.ChatCompletionMessageParam[] {
     const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = []
+
+    // Get length-specific guidance
+    const generationLength = length || this.config.generationLength || 'medium'
+    const lengthGuidance: Record<AIGenerationLength, string> = {
+      'short': '保持回应简洁，每段对话不超过 50 字',
+      'medium': '保持回应适中，每段对话约 100-150 字',
+      'long': '可以详细描述，每段对话约 200-300 字，包含更多细节和描写',
+      'verylong': '尽情展开剧情，每段对话可达 400-600 字，充分描写场景、心理和动作'
+    }
 
     // System prompt with world setting and character descriptions
     let systemContent = `你是一个角色扮演游戏的 AI 叙事引擎。
@@ -257,7 +355,7 @@ ${characters.map(c => `- ${c.name}: ${c.description}`).join('\n')}
 - 角色对话使用格式：[角色名]: 对话内容
 - 旁白使用格式：【旁白】旁白内容
 - 可以有多个角色对话和旁白交替
-- 保持回应简洁，每段对话不超过 100 字
+- ${lengthGuidance[generationLength]}
 - 对话要符合角色性格和当前情境`
 
     messages.push({
@@ -302,18 +400,24 @@ ${characters.map(c => `- ${c.name}: ${c.description}`).join('\n')}
     characters: Character[],
     recentMessages: Message[],
     userIdentity?: { type: 'actor' | 'observer'; characterId?: string },
-    userCharacter?: Character
+    userCharacter?: Character,
+    length?: AIGenerationLength
   ): Promise<AIResponse> {
     if (!this.client) {
       throw new Error('AI 服务未配置 - 请设置 API 密钥')
     }
+
+    // Use provided length or fall back to config
+    const generationLength = length || this.config.generationLength || 'medium'
+    const lengthConfig = AI_LENGTH_CONFIG[generationLength]
 
     const contextMessages = this.buildContext(
       worldSetting,
       characters,
       recentMessages,
       userIdentity,
-      userCharacter
+      userCharacter,
+      generationLength
     )
 
     try {
@@ -321,7 +425,7 @@ ${characters.map(c => `- ${c.name}: ${c.description}`).join('\n')}
         model: this.config.model || 'gpt-3.5-turbo',
         messages: contextMessages,
         temperature: 0.8,
-        max_tokens: 500
+        max_tokens: lengthConfig.maxTokens
       })
 
       const responseContent = completion.choices[0].message?.content || ''

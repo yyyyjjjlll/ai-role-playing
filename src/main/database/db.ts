@@ -48,6 +48,12 @@ CREATE TABLE IF NOT EXISTS user_identities (
   FOREIGN KEY (character_id) REFERENCES characters(id) ON DELETE SET NULL
 );
 
+-- AI config table (stores API settings)
+CREATE TABLE IF NOT EXISTS ai_config (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
+
 -- Create indexes for better query performance
 CREATE INDEX IF NOT EXISTS idx_characters_room_id ON characters(room_id);
 CREATE INDEX IF NOT EXISTS idx_messages_room_id ON messages(room_id);

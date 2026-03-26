@@ -2,8 +2,12 @@ import { ipcMain } from 'electron'
 import { AIChannels } from './channels'
 import { aiService, AIProvider, AI_PROVIDERS } from '../services/AIService'
 import { storageService } from '../services/StorageService'
+import { AIGenerationLength } from '../../shared/aiTypes'
 
-export function registerAIHandlers(): void {
+export async function registerAIHandlers(): Promise<void> {
+  // Load AI config from storage on startup
+  await aiService.loadFromStorage()
+
   // Get available providers
   ipcMain.handle(AIChannels.GET_PROVIDERS, async () => {
     return AI_PROVIDERS
@@ -53,6 +57,17 @@ export function registerAIHandlers(): void {
     }
   })
 
+  // Set Generation Length
+  ipcMain.handle(AIChannels.SET_GENERATION_LENGTH, async (_event, length: AIGenerationLength) => {
+    try {
+      aiService.setGenerationLength(length)
+      return { success: true }
+    } catch (error) {
+      console.error('Failed to set generation length:', error)
+      return { success: false, error: '设置生成长度失败' }
+    }
+  })
+
   // Get current config
   ipcMain.handle(AIChannels.GET_CONFIG, async () => {
     return aiService.getConfig()
@@ -69,7 +84,8 @@ export function registerAIHandlers(): void {
     async (
       _event,
       roomId: string,
-      userIdentity?: { type: 'actor' | 'observer'; characterId?: string }
+      userIdentity?: { type: 'actor' | 'observer'; characterId?: string },
+      length?: AIGenerationLength
     ) => {
       try {
         // Get room data
@@ -96,7 +112,8 @@ export function registerAIHandlers(): void {
           characters,
           recentMessages,
           userIdentity,
-          userCharacter
+          userCharacter,
+          length
         )
 
         return { success: true, response }

@@ -15,7 +15,8 @@
       "Bash(npm run typecheck:node:*)",
       "Bash(npm run typecheck)",
       "Bash(npm ls:*)",
-      "Bash(npx shadcn@latest add:*)"
+      "Bash(npx shadcn@latest add:*)",
+      "Bash(npm run typecheck:web:*)"
     ]
   }
 }

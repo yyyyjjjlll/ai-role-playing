@@ -1,4 +1,5 @@
 import { AIResponse, AIProvider, AIProviderConfig } from '@/../../main/services/AIService'
+import { AIGenerationLength } from '@/shared/aiTypes'
 
 /**
  * Type-safe IPC service for AI operations
@@ -45,9 +46,17 @@ export const aiApi = {
   },
 
   /**
+   * Set the generation length
+   */
+  async setGenerationLength(length: AIGenerationLength): Promise<boolean> {
+    const result = await window.electron.ipcRenderer.invoke('ai:setGenerationLength', length)
+    return result.success
+  },
+
+  /**
    * Get current AI config
    */
-  async getConfig(): Promise<{ provider: AIProvider; apiKey?: string; model?: string; baseUrl?: string }> {
+  async getConfig(): Promise<{ provider: AIProvider; apiKey?: string; model?: string; baseUrl?: string; generationLength?: AIGenerationLength }> {
     return window.electron.ipcRenderer.invoke('ai:getConfig')
   },
 
@@ -63,8 +72,9 @@ export const aiApi = {
    */
   async generateResponse(
     roomId: string,
-    userIdentity?: { type: 'actor' | 'observer'; characterId?: string }
+    userIdentity?: { type: 'actor' | 'observer'; characterId?: string },
+    length?: AIGenerationLength
   ): Promise<{ success: boolean; response?: AIResponse; error?: string }> {
-    return window.electron.ipcRenderer.invoke('ai:generateResponse', roomId, userIdentity)
+    return window.electron.ipcRenderer.invoke('ai:generateResponse', roomId, userIdentity, length)
   },
 }

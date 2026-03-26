@@ -1,3 +1,5 @@
+import { AIGenerationLength } from '../../../shared/aiTypes'
+
 // Core domain types
 
 export interface Room {
@@ -89,6 +91,6 @@ export interface AppState {
   updateCharacterAsync: (characterId: string, updates: Partial<Character>) => Promise<Character | null>
   deleteCharacterAsync: (characterId: string) => Promise<boolean>
   sendMessageAsync: (roomId: string, content: string, type: MessageType, characterId?: string) => Promise<Message | null>
-  sendUserMessageWithAIResponse: (roomId: string, content: string) => Promise<{ userMessage: Message; aiMessages: Message[] } | null>
+  sendUserMessageWithAIResponse: (roomId: string, content: string, length?: AIGenerationLength) => Promise<{ userMessage: Message; aiMessages: Message[] } | null>
   saveUserIdentityAsync: (roomId: string, type: 'actor' | 'observer', characterId?: string) => Promise<UserIdentity | null>
 }
