@@ -356,7 +356,10 @@ ${characters.map(c => `- ${c.name}: ${c.description}`).join('\n')}
 - 旁白使用格式：【旁白】旁白内容
 - 可以有多个角色对话和旁白交替
 - ${lengthGuidance[generationLength]}
-- 对话要符合角色性格和当前情境`
+- 对话要符合角色性格和当前情境
+
+特殊指令：
+- 当用户发送"（继续）"或类似内容时，表示希望你继续生成接下来的剧情，请根据当前情境自然地推动故事发展`
 
     messages.push({
       role: 'system',
