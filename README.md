@@ -74,6 +74,43 @@ npm run dev
 npm run build
 ```
 
+## 📦 打包发布
+
+### 打包命令
+
+```bash
+# 打包当前平台
+npm run dist
+
+# 仅打包 Windows
+npm run dist:win
+
+# 仅打包 macOS
+npm run dist:mac
+
+# 仅打包 Linux
+npm run dist:linux
+
+# 仅打包不生成安装文件（解压版）
+npm run package
+```
+
+### 输出位置
+- 打包完成后，安装包位于 `dist/` 目录
+- Windows: `dist/NPC Chat-1.0.0-Setup.exe`
+
+### 注意事项
+1. **首次打包前可能需要重建原生模块**：
+   ```bash
+   npm run rebuild
+   ```
+
+2. **跨平台打包**需要使用对应的操作系统，或在 CI/CD 环境中进行
+
+3. **Windows 打包**需要 [Visual Studio Build Tools](https://visualstudio.microsoft.com/downloads/)
+
+4. **macOS 打包**需要 Xcode Command Line Tools
+
 ## 🛠️ 技术栈
 
 | 分类 | 技术 |
