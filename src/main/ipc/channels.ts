@@ -39,6 +39,7 @@ export const AIChannels = {
   GET_PROVIDERS: 'ai:getProviders',
   SET_PROVIDER: 'ai:setProvider',
   GENERATE_RESPONSE: 'ai:generateResponse',
+  GENERATE_STREAM: 'ai:generateStream',
   SET_API_KEY: 'ai:setApiKey',
   SET_BASE_URL: 'ai:setBaseUrl',
   SET_MODEL: 'ai:setModel',

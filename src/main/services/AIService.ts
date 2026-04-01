@@ -2,6 +2,32 @@ import OpenAI from 'openai'
 import { Character, Message } from '../types'
 import { storageService } from './StorageService'
 import { AIGenerationLength, AI_LENGTH_CONFIG } from '../../shared/aiTypes'
+// import { app } from 'electron'
+// import { join } from 'path'
+// import { appendFileSync, existsSync, mkdirSync } from 'fs'
+
+// 日志文件路径
+// function getLogFilePath(): string {
+//   const userDataPath = app.getPath('userData')
+//   const logsDir = join(userDataPath, 'logs')
+//   if (!existsSync(logsDir)) {
+//     mkdirSync(logsDir, { recursive: true })
+//   }
+//   const date = new Date().toISOString().split('T')[0]
+//   return join(logsDir, `ai_${date}.log`)
+// }
+
+// 写入日志
+// function writeLog(content: string): void {
+//   try {
+//     const logPath = getLogFilePath()
+//     const timestamp = new Date().toISOString()
+//     const logEntry = `[${timestamp}] ${content}\n`
+//     appendFileSync(logPath, logEntry, 'utf-8')
+//   } catch (error) {
+//     console.error('[AIService] Failed to write log:', error)
+//   }
+// }
 
 export interface AIResponse {
   characterDialogues: Array<{
@@ -312,10 +338,10 @@ export class AIService {
     // Get length-specific guidance
     const generationLength = length || this.config.generationLength || 'medium'
     const lengthGuidance: Record<AIGenerationLength, string> = {
-      'short': '保持回应简洁，每段对话不超过 50 字',
-      'medium': '保持回应适中，每段对话约 100-150 字',
-      'long': '可以详细描述，每段对话约 200-300 字，包含更多细节和描写',
-      'verylong': '尽情展开剧情，每段对话可达 400-600 字，充分描写场景、心理和动作'
+      'short': '保持回应简洁，每段内容 50-100 字',
+      'medium': '保持回应适中，每段内容约 100-200 字',
+      'long': '可以详细描述，每段内容约 200-400 字，包含更多细节和描写',
+      'verylong': '尽情展开剧情，每段内容可达 400-800 字，充分描写场景、心理和动作'
     }
 
     // System prompt with world setting and character descriptions
@@ -355,11 +381,14 @@ ${characters.map(c => `- ${c.name}: ${c.description}`).join('\n')}
 - 角色对话使用格式：[角色名]: 对话内容
 - 旁白使用格式：【旁白】旁白内容
 - 可以有多个角色对话和旁白交替
-- ${lengthGuidance[generationLength]}
 - 对话要符合角色性格和当前情境
 
 特殊指令：
-- 当用户发送"（继续）"或类似内容时，表示希望你继续生成接下来的剧情，请根据当前情境自然地推动故事发展`
+- 当用户发送"（继续）"或类似内容时，表示希望你继续生成接下来的剧情，请根据当前情境自然地推动故事发展
+
+字数限制：
+- ${lengthGuidance[generationLength]}
+`
 
     messages.push({
       role: 'system',
@@ -423,6 +452,9 @@ ${characters.map(c => `- ${c.name}: ${c.description}`).join('\n')}
       generationLength
     )
 
+    // 记录发送给 AI 的消息
+    // writeLog(`===== 发送消息 =====\n长度设置: ${generationLength}\n${JSON.stringify(contextMessages, null, 2)}`)
+
     try {
       const completion = await this.client.chat.completions.create({
         model: this.config.model || 'gpt-3.5-turbo',
@@ -432,7 +464,73 @@ ${characters.map(c => `- ${c.name}: ${c.description}`).join('\n')}
       })
 
       const responseContent = completion.choices[0].message?.content || ''
+
+      // 记录 AI 返回的信息
+      // writeLog(`===== AI 返回 =====\n${responseContent}`)
+
       return this.parseAIResponse(responseContent, characters)
+    } catch (error) {
+      if (error instanceof OpenAI.APIError) {
+        throw new Error(`AI 服务错误：${error.message}`)
+      }
+      throw error
+    }
+  }
+
+  /**
+   * Generate AI response with streaming
+   */
+  async *generateStream(
+    worldSetting: string,
+    characters: Character[],
+    recentMessages: Message[],
+    userIdentity?: { type: 'actor' | 'observer'; characterId?: string },
+    userCharacter?: Character,
+    length?: AIGenerationLength
+  ): AsyncGenerator<string, void, unknown> {
+    if (!this.client) {
+      throw new Error('AI 服务未配置 - 请设置 API 密钥')
+    }
+
+    // Use provided length or fall back to config
+    const generationLength = length || this.config.generationLength || 'medium'
+    const lengthConfig = AI_LENGTH_CONFIG[generationLength]
+
+    const contextMessages = this.buildContext(
+      worldSetting,
+      characters,
+      recentMessages,
+      userIdentity,
+      userCharacter,
+      generationLength
+    )
+
+    // 记录发送给 AI 的消息
+    // writeLog(`===== 流式发送消息 =====\n长度设置: ${generationLength}\n${JSON.stringify(contextMessages, null, 2)}`)
+
+    try {
+      const stream = await this.client.chat.completions.create({
+        model: this.config.model || 'gpt-3.5-turbo',
+        messages: contextMessages,
+        temperature: 0.8,
+        max_tokens: lengthConfig.maxTokens,
+        stream: true
+      })
+
+      let fullContent = ''
+
+      for await (const chunk of stream) {
+        const content = chunk.choices[0]?.delta?.content || ''
+        if (content) {
+          fullContent += content
+          yield content
+        }
+      }
+
+      // 记录 AI 返回的信息
+      // writeLog(`===== 流式 AI 返回 =====\n${fullContent}`)
+
+      return
     } catch (error) {
       if (error instanceof OpenAI.APIError) {
         throw new Error(`AI 服务错误：${error.message}`)
