@@ -2,32 +2,32 @@ import OpenAI from 'openai'
 import { Character, Message } from '../types'
 import { storageService } from './StorageService'
 import { AIGenerationLength, AI_LENGTH_CONFIG } from '../../shared/aiTypes'
-// import { app } from 'electron'
-// import { join } from 'path'
-// import { appendFileSync, existsSync, mkdirSync } from 'fs'
+import { app } from 'electron'
+import { join } from 'path'
+import { appendFileSync, existsSync, mkdirSync } from 'fs'
 
 // 日志文件路径
-// function getLogFilePath(): string {
-//   const userDataPath = app.getPath('userData')
-//   const logsDir = join(userDataPath, 'logs')
-//   if (!existsSync(logsDir)) {
-//     mkdirSync(logsDir, { recursive: true })
-//   }
-//   const date = new Date().toISOString().split('T')[0]
-//   return join(logsDir, `ai_${date}.log`)
-// }
+function getLogFilePath(): string {
+  const userDataPath = app.getPath('userData')
+  const logsDir = join(userDataPath, 'logs')
+  if (!existsSync(logsDir)) {
+    mkdirSync(logsDir, { recursive: true })
+  }
+  const date = new Date().toISOString().split('T')[0]
+  return join(logsDir, `ai_${date}.log`)
+}
 
 // 写入日志
-// function writeLog(content: string): void {
-//   try {
-//     const logPath = getLogFilePath()
-//     const timestamp = new Date().toISOString()
-//     const logEntry = `[${timestamp}] ${content}\n`
-//     appendFileSync(logPath, logEntry, 'utf-8')
-//   } catch (error) {
-//     console.error('[AIService] Failed to write log:', error)
-//   }
-// }
+function writeLog(content: string): void {
+  try {
+    const logPath = getLogFilePath()
+    const timestamp = new Date().toISOString()
+    const logEntry = `[${timestamp}] ${content}\n`
+    appendFileSync(logPath, logEntry, 'utf-8')
+  } catch (error) {
+    console.error('[AIService] Failed to write log:', error)
+  }
+}
 
 export interface AIResponse {
   characterDialogues: Array<{
@@ -41,6 +41,7 @@ export interface AIResponse {
 // AI 提供商类型
 export type AIProvider =
   | 'openai'           // OpenAI GPT-4, GPT-3.5-turbo
+  | 'qwen'            // 千问
   | 'azure-openai'    // Azure OpenAI
   | 'deepseek'        // DeepSeek (深度求索)
   | 'moonshot'        // Moonshot (月之暗面)
@@ -69,6 +70,14 @@ export const AI_PROVIDERS: Record<AIProvider, AIProviderConfig> = {
     defaultBaseUrl: 'https://api.openai.com/v1',
     apiKeyRequired: true,
     description: 'OpenAI 官方 API，支持 GPT-4、GPT-3.5 等模型'
+  },
+  'qwen': {
+    id: 'qwen',
+    name: '千问',
+    defaultModel: 'qwen-plus',
+    defaultBaseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+    apiKeyRequired: true,
+    description: '阿里云通义千问 API，支持 qwen-plus、qwen-turbo、qwen-max 等模型'
   },
   'azure-openai': {
     id: 'azure-openai',
@@ -453,7 +462,7 @@ ${characters.map(c => `- ${c.name}: ${c.description}`).join('\n')}
     )
 
     // 记录发送给 AI 的消息
-    // writeLog(`===== 发送消息 =====\n长度设置: ${generationLength}\n${JSON.stringify(contextMessages, null, 2)}`)
+    writeLog(`===== 发送消息 =====\n长度设置: ${generationLength}\n${JSON.stringify(contextMessages, null, 2)}`)
 
     try {
       const completion = await this.client.chat.completions.create({
@@ -466,7 +475,7 @@ ${characters.map(c => `- ${c.name}: ${c.description}`).join('\n')}
       const responseContent = completion.choices[0].message?.content || ''
 
       // 记录 AI 返回的信息
-      // writeLog(`===== AI 返回 =====\n${responseContent}`)
+      writeLog(`===== AI 返回 =====\n${responseContent}`)
 
       return this.parseAIResponse(responseContent, characters)
     } catch (error) {
@@ -506,7 +515,7 @@ ${characters.map(c => `- ${c.name}: ${c.description}`).join('\n')}
     )
 
     // 记录发送给 AI 的消息
-    // writeLog(`===== 流式发送消息 =====\n长度设置: ${generationLength}\n${JSON.stringify(contextMessages, null, 2)}`)
+    writeLog(`===== 流式发送消息 =====\n长度设置: ${generationLength}\n${JSON.stringify(contextMessages, null, 2)}`)
 
     try {
       const stream = await this.client.chat.completions.create({
@@ -528,7 +537,7 @@ ${characters.map(c => `- ${c.name}: ${c.description}`).join('\n')}
       }
 
       // 记录 AI 返回的信息
-      // writeLog(`===== 流式 AI 返回 =====\n${fullContent}`)
+      writeLog(`===== 流式 AI 返回 =====\n${fullContent}`)
 
       return
     } catch (error) {
