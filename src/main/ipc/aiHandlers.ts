@@ -1,8 +1,15 @@
-import { ipcMain } from 'electron'
+import { ipcMain, IpcMainEvent } from 'electron'
 import { AIChannels } from './channels'
 import { aiService, AIProvider, AI_PROVIDERS } from '../services/AIService'
 import { storageService } from '../services/StorageService'
 import { AIGenerationLength } from '../../shared/aiTypes'
+
+// 流式响应的回调类型
+type StreamCallback = (chunk: string) => void
+type DoneCallback = (error?: string) => void
+
+// 存储活跃的流式请求
+const activeStreams = new Map<string, { cancel: boolean }>()
 
 export async function registerAIHandlers(): Promise<void> {
   // Load AI config from storage on startup
@@ -123,6 +130,67 @@ export async function registerAIHandlers(): Promise<void> {
           success: false,
           error: error instanceof Error ? error.message : 'AI 生成失败'
         }
+      }
+    }
+  )
+
+  // Generate AI response with streaming
+  ipcMain.handle(
+    AIChannels.GENERATE_STREAM,
+    async (event, roomId: string, userIdentity?: { type: 'actor' | 'observer'; characterId?: string }, length?: AIGenerationLength) => {
+      const streamId = `${roomId}-${Date.now()}`
+      const streamInfo = { cancel: false }
+      activeStreams.set(streamId, streamInfo)
+
+      try {
+        // Get room data
+        const room = await storageService.getRoomById(roomId)
+        if (!room) {
+          throw new Error('房间不存在')
+        }
+
+        // Get characters in the room
+        const characters = await storageService.getCharactersByRoomId(roomId)
+
+        // Get recent messages
+        const recentMessages = await storageService.getRecentMessages(roomId, 50)
+
+        // Get user character if actor mode
+        let userCharacter
+        if (userIdentity?.type === 'actor' && userIdentity.characterId) {
+          userCharacter = characters.find(c => c.id === userIdentity.characterId)
+        }
+
+        // 使用流式生成
+        const stream = aiService.generateStream(
+          room.worldSetting || '',
+          characters,
+          recentMessages,
+          userIdentity,
+          userCharacter,
+          length
+        )
+
+        // 逐个发送流式内容
+        for await (const chunk of stream) {
+          if (streamInfo.cancel) {
+            break
+          }
+          event.sender.send('ai:streamChunk', { streamId, chunk })
+        }
+
+        event.sender.send('ai:streamDone', { streamId })
+        activeStreams.delete(streamId)
+
+        return { success: true }
+      } catch (error) {
+        console.error('Failed to generate AI stream:', error)
+        event.sender.send('ai:streamError', {
+          streamId,
+          error: error instanceof Error ? error.message : 'AI 生成失败'
+        })
+        activeStreams.delete(streamId)
+        return { success: false, error: error instanceof Error ? error.message : 'AI 生成失败' }
       }
     }
   )

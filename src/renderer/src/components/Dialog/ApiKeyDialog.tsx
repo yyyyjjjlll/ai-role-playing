@@ -137,6 +137,12 @@ export function ApiKeyDialog({
                     <span>OpenAI (GPT-4/3.5)</span>
                   </div>
                 </SelectItem>
+                <SelectItem value="qwen">
+                  <div className="flex items-center gap-2">
+                    <Globe className="h-4 w-4" />
+                    <span>Qwen 通义千问</span>
+                  </div>
+                </SelectItem>
                 <SelectItem value="deepseek">
                   <div className="flex items-center gap-2">
                     <Globe className="h-4 w-4" />

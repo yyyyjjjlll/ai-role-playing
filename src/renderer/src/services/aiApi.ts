@@ -77,4 +77,37 @@ export const aiApi = {
   ): Promise<{ success: boolean; response?: AIResponse; error?: string }> {
     return window.electron.ipcRenderer.invoke('ai:generateResponse', roomId, userIdentity, length)
   },
+
+  /**
+   * Generate AI response with streaming
+   * Returns a promise that resolves when stream is complete
+   * Use onChunk callback to receive streaming content
+   */
+  async generateStream(
+    roomId: string,
+    userIdentity?: { type: 'actor' | 'observer'; characterId?: string },
+    length?: AIGenerationLength,
+    onChunk?: (chunk: string) => void
+  ): Promise<{ success: boolean; error?: string }> {
+    // Set up listeners before starting stream
+    const chunkListener = (_event: unknown, data: { streamId: string; chunk: string }) => {
+      onChunk?.(data.chunk)
+    }
+
+    const doneListener = () => {
+      window.electron.ipcRenderer.removeListener('ai:streamChunk', chunkListener)
+      window.electron.ipcRenderer.removeListener('ai:streamDone', doneListener)
+      window.electron.ipcRenderer.removeListener('ai:streamError', errorListener)
+    }
+
+    const errorListener = (_event: unknown, data: { streamId: string; error: string }) => {
+      doneListener()
+    }
+
+    window.electron.ipcRenderer.on('ai:streamChunk', chunkListener)
+    window.electron.ipcRenderer.on('ai:streamDone', doneListener)
+    window.electron.ipcRenderer.on('ai:streamError', errorListener)
+
+    return window.electron.ipcRenderer.invoke('ai:generateStream', roomId, userIdentity, length)
+  },
 }

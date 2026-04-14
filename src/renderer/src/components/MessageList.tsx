@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { useAppStore } from '@/store/appStore'
 import { ChatInput } from './ChatInput'
@@ -6,6 +6,9 @@ import { Loader2, ArrowRight } from 'lucide-react'
 import { GenerationLengthSelector } from './GenerationLengthSelector'
 import { AIGenerationLength } from '../../shared/aiTypes'
 import { Button } from '@/components/ui/button'
+import { aiApi } from '@/services/aiApi'
+import { storageApi } from '@/services/storageApi'
+import { Message } from '../types'
 
 export function MessageList(): React.JSX.Element {
   const messages = useAppStore((state) => state.messages)
@@ -16,10 +19,16 @@ export function MessageList(): React.JSX.Element {
   const getUserIdentity = useAppStore((state) => state.getUserIdentity)
   const scrollRef = useRef<HTMLDivElement>(null)
 
+  // 流式输出内容
+  const [streamingContent, setStreamingContent] = useState('')
+
   const userIdentity = currentRoomId ? getUserIdentity(currentRoomId) : undefined
 
   // Store current selected length
   const currentLengthRef = React.useRef<AIGenerationLength>('medium')
+
+  // 流式输出时保存消息的引用
+  const streamingMessageIdRef = useRef<string | null>(null)
 
   const getCharacterName = (characterId?: string) => {
     if (!characterId) return '旁白'
@@ -33,22 +42,164 @@ export function MessageList(): React.JSX.Element {
     return character?.portraitUrl
   }
 
-  // Auto-scroll to bottom when new messages arrive
+  // Auto-scroll to bottom when new messages arrive or streaming
   useEffect(() => {
     if (scrollRef.current) {
-      scrollRef.current.scrollIntoView({ behavior: 'smooth' })
+      scrollRef.current.scrollIntoView({ behavior: 'smooth', block: 'end' })
     }
-  }, [messages])
+  }, [messages, streamingContent])
 
   const handleSendMessage = async (content: string) => {
     if (!currentRoomId) return
-    await sendUserMessageWithAIResponse(currentRoomId, content, currentLengthRef.current)
+
+    // 设置 loading 状态
+    useAppStore.getState().setLoading(true)
+
+    // 清空之前的流式内容
+    setStreamingContent('')
+
+    // 获取用户身份
+    const userIdentity = getUserIdentity(currentRoomId)
+    const actualCharacterId = userIdentity?.type === 'actor' ? userIdentity.characterId : undefined
+
+    // 1. 保存用户消息
+    const userMessage: Message = {
+      id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      roomId: currentRoomId,
+      characterId: actualCharacterId,
+      type: 'user',
+      content,
+      timestamp: Date.now()
+    }
+    // 保存到数据库
+    const savedUserMessage = await storageApi.createMessage(userMessage)
+    useAppStore.getState().addMessage(savedUserMessage)
+
+    // 2. 创建流式消息占位
+    const streamMessageId = `${Date.now()}-stream-${Math.random().toString(36).substr(2, 9)}`
+    streamingMessageIdRef.current = streamMessageId
+
+    const streamMessage: Message = {
+      id: streamMessageId,
+      roomId: currentRoomId,
+      characterId: undefined,
+      type: 'ai',
+      content: '',
+      timestamp: Date.now()
+    }
+    useAppStore.getState().addMessage(streamMessage)
+
+    // 3. 开始流式请求
+    let accumulatedContent = ''
+
+    const result = await aiApi.generateStream(
+      currentRoomId,
+      userIdentity,
+      currentLengthRef.current,
+      (chunk) => {
+        accumulatedContent += chunk
+        setStreamingContent(accumulatedContent)
+      }
+    )
+
+    if (!result.success) {
+      console.error('AI generation failed:', result.error)
+      // 删除流式占位消息
+      const currentMessages = useAppStore.getState().messages
+      const filteredMessages = currentMessages.filter(m => m.id !== streamMessageId)
+      useAppStore.getState().setMessages(filteredMessages)
+      useAppStore.getState().setLoading(false)
+      return
+    }
+
+    // 4. 流式完成后，解析并保存完整消息
+    const finalContent = accumulatedContent
+
+    // 解析 AI 返回的内容 - 按顺序解析
+    const parsedMessages: Array<{
+      type: 'narrator' | 'ai'
+      characterId?: string
+      content: string
+    }> = []
+
+    const lines = finalContent.split('\n').filter(line => line.trim())
+    for (const line of lines) {
+      // 解析角色对话: [角色名]: 对话内容
+      const dialogueMatch = line.match(/^\[([^\]]+)\]:\s*(.+)$/)
+      if (dialogueMatch) {
+        const characterName = dialogueMatch[1].trim()
+        const dialogueContent = dialogueMatch[2].trim()
+        const character = characters.find(c => c.name === characterName)
+        if (character) {
+          parsedMessages.push({
+            type: 'ai',
+            characterId: character.id,
+            content: dialogueContent
+          })
+        }
+        continue
+      }
+
+      // 解析旁白: 【旁白】旁白内容
+      const narratorMatch = line.match(/^【旁白】\s*(.+)$/)
+      if (narratorMatch) {
+        const narratorContent = narratorMatch[1].trim()
+        // 合并连续的旁白
+        if (parsedMessages.length > 0 && parsedMessages[parsedMessages.length - 1].type === 'narrator') {
+          parsedMessages[parsedMessages.length - 1].content += '\n' + narratorContent
+        } else {
+          parsedMessages.push({
+            type: 'narrator',
+            content: narratorContent
+          })
+        }
+        continue
+      }
+
+      // 其他内容作为旁白处理
+      if (parsedMessages.length > 0 && parsedMessages[parsedMessages.length - 1].type === 'narrator') {
+        parsedMessages[parsedMessages.length - 1].content += '\n' + line
+      } else {
+        parsedMessages.push({
+          type: 'narrator',
+          content: line
+        })
+      }
+    }
+
+    // 删除流式占位消息
+    const currentMessages = useAppStore.getState().messages
+    const filteredMessages = currentMessages.filter(m => m.id !== streamMessageId)
+    useAppStore.getState().setMessages(filteredMessages)
+
+    // 按顺序保存消息到数据库
+    const aiMessages: Message[] = []
+    let timeOffset = 0
+
+    for (const parsed of parsedMessages) {
+      const message: Message = {
+        id: `${Date.now()}-${timeOffset}-${Math.random().toString(36).substr(2, 9)}`,
+        roomId: currentRoomId,
+        type: parsed.type,
+        characterId: parsed.characterId,
+        content: parsed.content,
+        timestamp: Date.now() + timeOffset
+      }
+      const saved = await storageApi.createMessage(message)
+      aiMessages.push(saved)
+      timeOffset += 100 // 每个消息间隔 100ms
+    }
+
+    useAppStore.getState().setMessages([...filteredMessages, ...aiMessages])
+    setStreamingContent('')
+    streamingMessageIdRef.current = null
+    useAppStore.getState().setLoading(false)
   }
 
   const handleContinue = async () => {
     if (!currentRoomId) return
     // 发送一个特殊的提示，让 AI 继续剧情
-    await sendUserMessageWithAIResponse(currentRoomId, '（继续）', currentLengthRef.current)
+    await handleSendMessage('（继续）')
   }
 
   const handleLengthChange = (length: AIGenerationLength) => {
@@ -111,7 +262,8 @@ export function MessageList(): React.JSX.Element {
       <ScrollArea className="flex-1">
         <div className="p-4 space-y-4">
           {messages.length > 0 ? (
-            messages.map((message) => {
+            // 过滤掉流式占位符消息（content 为空且 ID 包含 stream）
+            messages.filter(msg => !(msg.content === '' && msg.id.includes('stream'))).map((message) => {
               const isUser = message.type === 'user'
               const isNarrator = message.type === 'narrator'
               const portraitUrl = getCharacterPortrait(message.characterId)
@@ -120,9 +272,9 @@ export function MessageList(): React.JSX.Element {
               // Narrator messages - centered and styled differently
               if (isNarrator) {
                 return (
-                  <div key={message.id} className="flex items-center justify-center my-6">
+                  <div key={message.id} className="flex items-center justify-center my-6 message-enter">
                     <div className="max-w-[90%] rounded-lg bg-muted/50 px-6 py-3 border border-muted">
-                      <p className="text-sm italic text-muted-foreground text-center leading-relaxed">
+                      <p className="text-sm italic text-muted-foreground text-center leading-relaxed whitespace-pre-wrap">
                         {message.content}
                       </p>
                       <p className="text-xs text-muted-foreground/60 text-center mt-2">
@@ -137,7 +289,7 @@ export function MessageList(): React.JSX.Element {
               return (
                 <div
                   key={message.id}
-                  className={`flex gap-3 ${isUser ? 'flex-row-reverse' : 'flex-row'}`}
+                  className={`flex gap-3 ${isUser ? 'flex-row-reverse' : 'flex-row'} message-enter`}
                 >
                   {/* Avatar */}
                   <div className="flex-shrink-0">
@@ -220,20 +372,37 @@ export function MessageList(): React.JSX.Element {
             </div>
           )}
 
-          {/* Loading indicator */}
+          {/* Loading indicator with streaming content */}
           {isLoading && (
-            <div className="flex items-center gap-3 pl-3">
-              <div className="h-10 w-10 rounded-full bg-muted flex items-center justify-center">
-                <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+            <div className="flex items-center gap-3 pl-3 animate-in fade-in slide-in-from-bottom-2 duration-300">
+              <div className="flex-shrink-0">
+                <div className="h-10 w-10 rounded-full bg-gradient-to-br from-primary/20 to-primary/10 flex items-center justify-center border border-primary/20">
+                  <div className="relative">
+                    <Loader2 className="h-5 w-5 animate-spin text-primary" />
+                    {/* 添加外圈旋转效果 */}
+                    <div className="absolute inset-0 h-5 w-5 rounded-full border-2 border-primary/30 border-t-primary animate-spin [animation-duration:1.5s]" />
+                  </div>
+                </div>
               </div>
               <div className="flex flex-col gap-1">
-                <span className="text-xs font-medium text-muted-foreground">AI</span>
-                <div className="rounded-2xl rounded-tl-sm px-4 py-2.5 bg-card border border-border">
-                  <div className="flex gap-1">
-                    <div className="h-2 w-2 rounded-full bg-muted-foreground/40 animate-bounce [animation-delay:-0.3s]"></div>
-                    <div className="h-2 w-2 rounded-full bg-muted-foreground/40 animate-bounce [animation-delay:-0.15s]"></div>
-                    <div className="h-2 w-2 rounded-full bg-muted-foreground/40 animate-bounce"></div>
-                  </div>
+                <span className="text-xs font-medium text-muted-foreground">AI 正在生成</span>
+                <div className="rounded-2xl rounded-tl-sm px-4 py-3 bg-card border border-border max-w-[70%] shadow-sm">
+                  {streamingContent ? (
+                    <p className="text-sm leading-relaxed whitespace-pre-wrap break-words">
+                      {streamingContent}
+                      {/* 优化光标样式 */}
+                      <span className="inline-block w-0.5 h-4 bg-primary align-middle ml-0.5 animate-pulse" />
+                    </p>
+                  ) : (
+                    <div className="flex items-center gap-1.5 py-0.5">
+                      <div className="flex gap-1">
+                        <div className="h-2 w-2 rounded-full bg-primary/60 animate-bounce [animation-delay:-0.3s]" />
+                        <div className="h-2 w-2 rounded-full bg-primary/60 animate-bounce [animation-delay:-0.15s]" />
+                        <div className="h-2 w-2 rounded-full bg-primary/60 animate-bounce" />
+                      </div>
+                      <span className="text-xs text-muted-foreground/70 ml-1">思考中</span>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
