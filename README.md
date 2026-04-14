@@ -18,6 +18,7 @@
 - **多平台支持**：
   - OpenAI (GPT-4, GPT-3.5)
   - Azure OpenAI
+  - Qwen (千问)
   - DeepSeek (深度求索)
   - Moonshot (月之暗面)
   - Zhipu AI (智谱 AI)
